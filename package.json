@@ -10,10 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "3": "^2.1.0",
     "@popperjs/core": "^2.11.8",
     "bootstrap": "^5.3.3",
+    "bootstrap-vue": "^2.23.1",
     "core-js": "^3.8.3",
+    "gapi-script": "^1.2.0",
     "vue": "^3.5.12",
+    "vue-multiselect": "^3.1.0",
     "vue-router": "^4.4.5"
   },
   "devDependencies": {
