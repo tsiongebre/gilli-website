@@ -1,3 +1,5 @@
+/* eslint-disable */
+
 import { createRouter, createWebHistory } from 'vue-router';
 import HomePage from '../components/homePage.vue';
 import VideoGallery from '../components/videoGallery.vue';

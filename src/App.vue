@@ -1,3 +1,5 @@
+<!-- eslint-disable -->
+
 <template>
   <div id="app">
     <!-- Navbar with a clean white background and dark text -->

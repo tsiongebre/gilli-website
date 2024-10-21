@@ -1,10 +1,11 @@
+/* eslint-disable */
+
 <template>
   <div>
     <!-- Full-width Hero Section with a light gray background and dark text -->
     <section id="hero" class="d-flex align-items-center justify-content-center vh-100 text-dark">
       <div class="container text-center">
-        <h1 class="display-1 fw-bold mb-4">Welcome to Gilli Lab</h1>
-        <p class="lead mb-5">Insert lab summary</p>
+        <h1 class="display-1 fw-bold mb-4">Lab Video Processing</h1>
         <a href="/videos" class="btn btn-green btn-lg">Explore Videos</a>
       </div>
     </section>
