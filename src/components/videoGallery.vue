@@ -21,7 +21,18 @@
               v-model="videoSearchQuery"
               class="form-control"
               placeholder="Search videos..."
-              @input="filterVideosByName"
+          />
+        </div>
+
+        <div class="me-3">
+          <button class="btn btn-info" @click="triggerFileInput">Upload videos</button>
+          <input
+              type="file"
+              style="display: none"
+              ref="fileInput"
+              accept="video/"
+              multiple
+              @change = "handleFileUpload"
           />
         </div>
 
@@ -29,30 +40,29 @@
     </div>
 
     <!-- Video Gallery Section with Background Card -->
-    <div class="card p-4 bg-light shadow-lg">
-      <div v-if="videos.length > 0" class="row">
-        <div v-for="video in videos" :key="video.id" class="col-lg-3 col-md-4 mb-3">
-          <div class="card video-card" style="padding: 0.3rem; width: 100%;">
-            <iframe
-                :src="`https://drive.google.com/file/d/${video.id}/preview`"
-                style="width: auto; height: auto; border-radius: 10px;"
-                allow="autoplay"
-                loading="lazy"
-            ></iframe>
-            <div class="card-body">
-              <p class="card-text">{{ video.name }}</p>
-            </div>
-          </div>
-        </div>
+    <div class="video-gallery">
+      <div v-for="video in videos" :key="video.id" class="video-container text-center">
+        <a :href="video.url" class="lightbox" data-lg-size="1280-720" data-gallery="gallery1">
+          <img
+              :src="video.thumbnail || 'default-thumbnail.jpg'"
+              :alt="`Thumbnail for ${video.name}`"
+              class="video-thumbnail"
+          />
+          <span class="caption">{{ video.name }}</span>
+        </a>
       </div>
-      <div v-if="videos.length === 0">
-        <p style="color: #404040;">No videos found in the folder. Please select a folder.</p>
-      </div>
+    </div>
+    <div v-if="videos.length === 0" class="text-center text-secondary mt-4">
+      <p>No videos found. Please upload files.</p>
     </div>
   </div>
 </template>
 
 <script>
+import "glightbox/dist/css/glightbox.css";
+import "glightbox/dist/js/glightbox.js";
+import GLightbox from 'glightbox';
+
 export default {
   name: 'VideoGallery',
   data() {
@@ -63,129 +73,131 @@ export default {
       filteredFolderNames: [],   // Filtered folder names based on search query
       searchQuery: '',           // Search query for filtering folders
       videoSearchQuery: '',      // Search query for filtering videos by name
-      testFolderID: '1Rbf5g2hpxd-nN3cBF-L1BYqkemAgMC-b',
-      apiKey: 'AIzaSyA-hzNH7cDMbsBG_97fhO3JpCK1UFfkKfs',
       nextPageToken: null,       // Token for next page of videos
       prevPageTokens: [],        // Stack of previous page tokens for navigation
       pageSize: 8,               // Number of videos per page
       loading: false,
+      fileUpload: false,
     };
   },
   methods: {
-    // Fetch all subfolders and automatically load videos from the latest folder
-    async listSubfolders() {
-      this.loading = true;
-      const apiUrl = `https://www.googleapis.com/drive/v3/files?q='${this.testFolderID}'+in+parents+and+mimeType='application/vnd.google-apps.folder'&key=${this.apiKey}&fields=files(id,name,createdTime)`;
-      try {
-        const response = await fetch(apiUrl);
-        const data = await response.json();
+    handleFileUpload(event) {
+      this.fileUpload = true;
+      this.duplicateFiles = [];
+      this.nonVideoFiles = [];
 
-        // Sort folders by creation time in descending order
-        this.allFolders = data.files.sort((a, b) => new Date(b.createdTime) - new Date(a.createdTime));
+      const files = Array.from(event.target.files);
 
-        // Automatically load videos from the latest folder
-        if (this.allFolders.length > 0) {
-          // Map each folder to a promise that fetches the videos
-          const folderPromises = this.allFolders.map(folder => {
-            const folderId = folder.id;
-            return this.listVideosInFolder(folderId);  // Return the promise for each folder
+      const videoFiles = files.filter(file => {
+        if (!file.type.startsWith('video/')) {
+          this.nonVideoFiles.push(file.name); // Track non-video files
+          return false; // Exclude non-video files
+        }
+        return true;
+      });
+
+      videoFiles.forEach(file => {
+
+        if (this.videos.some(video => video.name === file.name)) {
+          this.duplicateFiles.push(file.name)
+          return;
+        }
+
+        const video = document.createElement('video');
+
+        video.src = URL.createObjectURL(file);
+
+        video.currentTime = 1; // Capture the frame at the 1-second mark
+
+        video.addEventListener('loadeddata', () => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          const targetWidth = 320;
+          const targetHeight = 180;
+
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          const scale = Math.min(
+              targetWidth / video.videoWidth,
+              targetHeight / video.videoHeight
+          );
+          const x = (targetWidth - video.videoWidth * scale) / 2;
+          const y = (targetHeight - video.videoHeight * scale) / 2;
+
+          ctx.drawImage(
+              video,
+              0,
+              0,
+              video.videoWidth,
+              video.videoHeight,
+              x,
+              y,
+              video.videoWidth * scale,
+              video.videoHeight * scale
+          );
+
+          const thumbnail = canvas.toDataURL('image/png'); // Generate thumbnail as Base64 URL
+
+          this.videos.push({
+            name: file.name,
+            url: video.src,
+            thumbnail,
           });
 
-          // Wait for all folder promises to resolve in parallel
-          await Promise.all(folderPromises);
+          // Clean up resources
+          video.remove();
+          canvas.remove();
+
+          this.$nextTick(() => {
+            if (this.lightbox) {
+              this.lightbox.reload(); // Destroy existing lightbox instance
+            }
+            this.lightbox = GLightbox({
+              selector: ".lightbox",
+              touchNavigation: true,
+              loop: true,
+              videos: {
+                controls: true,
+                autoplay: true,
+              },
+            });
+          });
+        });
+      });
+
+      if (this.duplicateFiles.length > 0 || this.nonVideoFiles.length > 0) {
+        let alertMessage = "Some files were not uploaded:\n";
+
+        if (this.duplicateFiles.length > 0) {
+          alertMessage += `\nDuplicate files: ${this.duplicateFiles.join(', ')}`;
         }
-      } catch (error) {
-        console.error('Error fetching subfolders:', error);
-      }
-      finally {
-        this.loading = false;  // Stop loading
-      }
-    },
 
-    // Fetch 8 videos at a time from a folder and handle pagination with nextPageToken
-    async listVideosInFolder(folderId) {
-      // Correctly encode the query for fetching FASTEC-IL5 subfolders
-      const fastecFolderQuery = `'${folderId}' in parents and name contains 'FASTEC-IL5'`;
-      const apiUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(fastecFolderQuery)}&key=${this.apiKey}&fields=files(id,name)`;
-
-      try {
-        const response = await fetch(apiUrl);
-        const data = await response.json();
-
-        // Check if the response contains files
-        if (data.files && data.files.length > 0) {
-          let allFetchedVideos = [];
-          // Fetch videos from the folders
-          for (let folder of data.files) {
-            const fastecFolderId = folder.id;
-            const videosApiUrl = `https://www.googleapis.com/drive/v3/files?q='${fastecFolderId}'+in+parents+and+mimeType contains 'video/'&key=${this.apiKey}&fields=files(id,name)`;
-            const videoResponse = await fetch(videosApiUrl);
-            const videoData = await videoResponse.json();
-            allFetchedVideos.push(...videoData.files); // Collect videos
-            this.nextPageToken = videoData.nextPageToken || null; // Store the nextPageToken
-          }
-          this.videos = allFetchedVideos; // Update the videos to display
-        } else {
-          console.error('No files found or invalid data:', data);
-          this.videos = [];
+        if (this.nonVideoFiles.length > 0) {
+          alertMessage += `\nNon-video files: ${this.nonVideoFiles.join(', ')}`;
         }
-      } catch (error) {
-        console.error('Error fetching videos from FASTEC-IL5 folders:', error);
+
+        alert(alertMessage);
       }
     },
 
-    // Fetch videos from all selected folders
-    async selectAll() {
-      this.selectedFolders = this.filteredFolderNames.map(folder => folder.name);
-      if (this.selectedFolders.length > 0) {
-        let allFetchedVideos = [];
-        for (let folderName of this.selectedFolders) {
-          const folder = this.allFolders.find(f => f.name === folderName);
-          if (folder) {
-            await this.listVideosInFolder(folder.id); // Fetch videos for each folder
-            allFetchedVideos.push(...this.videos);
-          }
-        }
-        this.videos = allFetchedVideos; // Set the videos from all selected folders
-      }
-    },
-
-    // Clear all selected folders and reset the video list
-    clearAll() {
-      this.selectedFolders = [];
-      this.videos = [];
-    },
-
-    // Pagination: Fetch the next page of videos
-    async nextPage() {
-      if (this.nextPageToken) {
-        await this.listVideosInFolder(this.selectedDateFolder, this.nextPageToken); // Fetch the next page
-      }
-    },
-
-    // Pagination: Fetch the previous page of videos (not supported in Google API directly)
-    prevPage() {
-      console.warn('Previous page is not supported with Google Drive API pagination');
-    },
-
-    // Filter the video list based on search query
-    filterVideosByName() {
-      this.videos = this.videos.filter(video =>
-          video.name.toLowerCase().includes(this.videoSearchQuery.toLowerCase())
-      );
-    },
-
-    // Filter folder list based on search query
-    filterFolders() {
-      if (this.searchQuery) {
-        this.filteredFolderNames = this.allFolders.filter(folder =>
-            folder.name.toLowerCase().includes(this.searchQuery.toLowerCase())
-        );
-      }
+    triggerFileInput() {
+      this.$refs.fileInput.click();
     },
   },
   mounted() {
-    this.listSubfolders(); // Load subfolders (date folders) when the component is mounted
+    this.lightbox = GLightbox({
+      selector: ".lightbox",
+      touchNavigation: true,
+      loop: true,
+      videos: {
+        controls: true,
+        autoplay: false,
+      },
+    });
   },
 };
 </script>
@@ -198,22 +210,6 @@ body {
 .gallery-header {
   color: #404040; /* Light gray text */
   margin-bottom: 20px;
-  text-align: center;
-}
-
-.video-card {
-  background-color: #303030; /* Slightly lighter gray for video cards */
-  border-radius: 8px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-}
-
-.card-body {
-  background-color: #404040; /* Darker gray for card body */
-}
-
-.card-text {
-  color: #e0e0e0; /* Light gray for video names */
-  font-weight: 500;
   text-align: center;
 }
 
@@ -241,30 +237,35 @@ button {
   background-color: #fff;
   color: #6c757d;
 }
-
-.badge {
-  padding: 0.6em 1em;
-  display: flex;
-  align-items: center;
+.video-gallery {
+  display: grid; /* Use CSS Grid for consistent layout */
+  grid-template-columns: repeat(4, 1fr); /* Create 4 columns of equal width */
+  gap: 20px; /* Add spacing between video containers */
+  justify-content: center; /* Center the grid */
 }
 
-.border {
-  background-color: #404040; /* Slightly darker background for distinction */
+.video-container {
+  width: 320px; /* Set a consistent width for video thumbnails */
+  height: auto;
+  margin-bottom: 20px; /* Add spacing below each container */
+  text-align: center; /* Center-align captions and content */
 }
 
-.video-card {
-  background-color: #303030; /* Slightly lighter gray for video cards */
-  border-radius: 8px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+.video-thumbnail {
+  width: 100%; /* Make thumbnails fill the container width */
+  border-radius: 5px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3); /* Add shadow for depth */
 }
 
-.card-body {
-  background-color: #404040; /* Darker gray for card body */
+.caption {
+  position: relative;
+  width: 100%;
+  color: black;
+  font-size: 16px;
+  font-weight: bold;
+  padding: 3px;
+  box-sizing: border-box;
+  border-radius: 4px; /* Optional: Rounded corners for the caption */
 }
 
-.card-text {
-  color: #e0e0e0; /* Light gray for video names */
-  font-weight: 500;
-  text-align: center;
-}
 </style>
